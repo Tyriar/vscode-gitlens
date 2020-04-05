@@ -9,11 +9,13 @@
 				<div class="setting">
 					<div class="setting__input">
 						<label for="keymap">Use</label>
-						<select id="keymap" name="keymap" data-setting>
-							<option value="alternate">alt-based</option>
-							<option value="chorded">chorded (default)</option>
-							<option value="none">user-defined</option>
-						</select>
+						<div class="select-container">
+							<select id="keymap" name="keymap" data-setting>
+								<option value="alternate">alt-based</option>
+								<option value="chorded">chorded (default)</option>
+								<option value="none">user-defined</option>
+							</select>
+						</div>
 						<label for="keymap"> keyboard shortcuts</label>
 					</div>
 					<span class="setting__hint hidden" data-visibility="keymap =alternate">

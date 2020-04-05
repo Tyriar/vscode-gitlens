@@ -238,7 +238,36 @@ function getWebviewsConfig(mode, env) {
 		}),
 		new HtmlPlugin({
 			excludeAssets: [/.+-styles\.js/],
-			excludeChunks: ['welcome'],
+			excludeChunks: ['settings', 'welcome'],
+			template: 'rebase/index.html',
+			filename: path.resolve(__dirname, 'dist/webviews/rebase.html'),
+			inject: true,
+			inlineSource: mode === 'production' ? '.css$' : undefined,
+			cspPlugin: {
+				enabled: true,
+				policy: cspPolicy,
+				nonceEnabled: {
+					'script-src': true,
+					'style-src': true,
+				},
+			},
+			minify:
+				mode === 'production'
+					? {
+							removeComments: true,
+							collapseWhitespace: true,
+							removeRedundantAttributes: false,
+							useShortDoctype: true,
+							removeEmptyAttributes: true,
+							removeStyleLinkTypeAttributes: true,
+							keepClosingSlash: true,
+							minifyCSS: true,
+					  }
+					: false,
+		}),
+		new HtmlPlugin({
+			excludeAssets: [/.+-styles\.js/],
+			excludeChunks: ['rebase', 'welcome'],
 			template: 'settings/settings.ejs',
 			filename: path.resolve(__dirname, 'dist/webviews/settings.html'),
 			inject: true,
@@ -266,7 +295,7 @@ function getWebviewsConfig(mode, env) {
 		}),
 		new HtmlPlugin({
 			excludeAssets: [/.+-styles\.js/],
-			excludeChunks: ['settings'],
+			excludeChunks: ['rebase', 'settings'],
 			template: 'welcome/welcome.ejs',
 			filename: path.resolve(__dirname, 'dist/webviews/welcome.html'),
 			inject: true,
@@ -319,6 +348,7 @@ function getWebviewsConfig(mode, env) {
 		context: path.resolve(__dirname, 'src/webviews/apps'),
 		entry: {
 			'main-styles': ['./scss/main.scss'],
+			rebase: ['./rebase/index.ts'],
 			settings: ['./settings/settings.ts'],
 			welcome: ['./welcome/welcome.ts'],
 		},

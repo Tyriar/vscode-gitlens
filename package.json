@@ -6025,6 +6025,17 @@
 				"when": "gitlens:enabled && focusedView =~ /^gitlens\\.views\\.search/"
 			}
 		],
+		"customEditors": [
+			{
+				"viewType": "gitlens.rebase",
+				"displayName": "Interactive Rebase Editor",
+				"selector": [
+					{
+						"filenamePattern": "git-rebase-todo"
+					}
+				]
+			}
+		],
 		"resourceLabelFormatters": [
 			{
 				"scheme": "gitlens",
