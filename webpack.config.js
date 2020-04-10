@@ -238,7 +238,7 @@ function getWebviewsConfig(mode, env) {
 		}),
 		new HtmlPlugin({
 			excludeAssets: [/.+-styles\.js/],
-			excludeChunks: ['settings', 'welcome'],
+			excludeChunks: ['settings', 'settings-styles', 'welcome', 'welcome-styles'],
 			template: 'rebase/index.html',
 			filename: path.resolve(__dirname, 'dist/webviews/rebase.html'),
 			inject: true,
@@ -267,7 +267,7 @@ function getWebviewsConfig(mode, env) {
 		}),
 		new HtmlPlugin({
 			excludeAssets: [/.+-styles\.js/],
-			excludeChunks: ['rebase', 'welcome'],
+			excludeChunks: ['rebase', 'rebase-styles', 'welcome', 'welcome-styles'],
 			template: 'settings/settings.ejs',
 			filename: path.resolve(__dirname, 'dist/webviews/settings.html'),
 			inject: true,
@@ -295,7 +295,7 @@ function getWebviewsConfig(mode, env) {
 		}),
 		new HtmlPlugin({
 			excludeAssets: [/.+-styles\.js/],
-			excludeChunks: ['rebase', 'settings'],
+			excludeChunks: ['rebase', 'rebase-styles', 'settings', 'settings-styles'],
 			template: 'welcome/welcome.ejs',
 			filename: path.resolve(__dirname, 'dist/webviews/welcome.html'),
 			inject: true,
@@ -347,10 +347,12 @@ function getWebviewsConfig(mode, env) {
 		name: 'webviews',
 		context: path.resolve(__dirname, 'src/webviews/apps'),
 		entry: {
-			'main-styles': ['./scss/main.scss'],
 			rebase: ['./rebase/index.ts'],
+			'rebase-styles': ['./scss/rebase.scss'],
 			settings: ['./settings/settings.ts'],
+			'settings-styles': ['./scss/settings.scss'],
 			welcome: ['./welcome/welcome.ts'],
+			'welcome-styles': ['./scss/welcome.scss'],
 		},
 		mode: mode,
 		target: 'web',

@@ -75,9 +75,21 @@ export type WelcomeState = AppStateWithConfig;
 export type RebaseEntryAction = 'pick' | 'reword' | 'edit' | 'squash' | 'fixup' | 'break' | 'drop';
 
 export interface RebaseEntry {
-	action: RebaseEntryAction;
-	ref: string;
-	message: string;
+	readonly action: RebaseEntryAction;
+	readonly ref: string;
+	readonly message: string;
+	readonly index: number;
+}
+
+export interface RebaseEntryCommit {
+	readonly ref: string;
+	readonly author: string;
+	readonly avatarUrl: string;
+	readonly date: string;
+	readonly dateFromNow: string;
+	readonly email: string | undefined;
+	readonly message: string;
+	readonly command: string;
 }
 
 export interface RebaseDidChangeNotificationParams {
@@ -105,4 +117,12 @@ export interface RebaseDidMoveEntryCommandParams {
 }
 export const RebaseDidMoveEntryCommandType = new IpcCommandType<RebaseDidMoveEntryCommandParams>('rebase/move/entry');
 
-export type RebaseState = RebaseDidChangeNotificationParams;
+export interface RebaseState extends RebaseDidChangeNotificationParams {
+	branch: string;
+	from: string;
+	to: string;
+	onto: string;
+
+	commits: RebaseEntryCommit[];
+	entries: RebaseEntry[];
+}

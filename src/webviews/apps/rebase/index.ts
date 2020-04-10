@@ -7,7 +7,6 @@ import {
 	RebaseDidChangeNotificationType,
 	RebaseDidMoveEntryCommandType,
 	RebaseDidStartCommandType,
-	RebaseEntry,
 	RebaseEntryAction,
 	RebaseState,
 } from '../../protocol';
@@ -41,7 +40,7 @@ class RebaseEditor extends App<RebaseState> {
 	protected onInitialize() {
 		this.state = this.getState() ?? this.state;
 		if (this.state != null) {
-			this.refresh(this.state.entries);
+			this.refresh(this.state);
 		}
 	}
 
@@ -159,8 +158,8 @@ class RebaseEditor extends App<RebaseState> {
 		switch (msg.method) {
 			case RebaseDidChangeNotificationType.method:
 				onIpcNotification(RebaseDidChangeNotificationType, msg, params => {
-					this.setState(params);
-					this.refresh(params.entries);
+					this.setState({ ...this.state, ...params });
+					this.refresh(this.state);
 				});
 				break;
 
@@ -171,7 +170,7 @@ class RebaseEditor extends App<RebaseState> {
 		}
 	}
 
-	private refresh(entries: RebaseEntry[]) {
+	private refresh(state: RebaseState) {
 		const $container = document.getElementById('entries')!;
 
 		const focusRef = document.activeElement?.closest<HTMLLIElement>('li[data-ref]')?.dataset.ref;
@@ -181,19 +180,19 @@ class RebaseEditor extends App<RebaseState> {
 		}
 
 		$container.innerHTML = '';
-		if (entries.length === 0) return;
+		if (state.entries.length === 0) return;
 
 		let tabIndex = 1;
 
 		let prev;
-		for (const entry of entries) {
+		for (const entry of state.entries) {
 			const $entry = document.createElement('li');
-			$entry.classList.add('rebase-entry', `rebase-entry--${entry.action}`);
+			$entry.classList.add('entry', `entry--${entry.action}`);
 			$entry.dataset.ref = entry.ref;
 			$entry.tabIndex = tabIndex++;
 
 			const $selectContainer = document.createElement('div');
-			$selectContainer.classList.add('rebase-entry-action', 'select-container');
+			$selectContainer.classList.add('entry-action', 'select-container');
 			$entry.appendChild($selectContainer);
 
 			const $select = document.createElement('select');
@@ -215,13 +214,41 @@ class RebaseEditor extends App<RebaseState> {
 			$selectContainer.appendChild($select);
 
 			const $message = document.createElement('span');
-			$message.classList.add('rebase-entry-message');
-			$message.innerText = entry.message;
+			$message.classList.add('entry-message');
+			$message.innerText = entry.message ?? '';
 			$entry.appendChild($message);
 
-			const $ref = document.createElement('span');
-			$ref.classList.add('rebase-entry-ref');
+			const commit = state.commits.find(c => c.ref.startsWith(entry.ref));
+			if (commit) {
+				$message.title = commit.message ?? '';
+
+				if (commit.author) {
+					if (commit.avatarUrl) {
+						const $avatar = document.createElement('img');
+						// $avatar.classList.add('entry-ref');
+						$avatar.src = commit.avatarUrl;
+						$entry.appendChild($avatar);
+					}
+
+					const $author = document.createElement('span');
+					$author.classList.add('entry-ref');
+					$author.innerText = commit.author;
+					$entry.appendChild($author);
+				}
+
+				if (commit.dateFromNow) {
+					const $date = document.createElement('span');
+					$date.title = commit.date ?? '';
+					$date.classList.add('entry-ref');
+					$date.innerText = commit.dateFromNow;
+					$entry.appendChild($date);
+				}
+			}
+
+			const $ref = document.createElement('a');
+			$ref.classList.add('entry-ref');
 			$ref.dataset.prev = prev ? `${prev} \u2190 ` : '';
+			$ref.href = commit?.command ?? '#';
 			$ref.innerText = entry.ref;
 			$entry.appendChild($ref);
 
@@ -234,7 +261,7 @@ class RebaseEditor extends App<RebaseState> {
 
 		document
 			.querySelectorAll<HTMLLIElement>(
-				`${focusSelect ? 'select' : 'li'}[data-ref="${focusRef ?? entries[0].ref}"]`,
+				`${focusSelect ? 'select' : 'li'}[data-ref="${focusRef ?? state.entries[0].ref}"]`,
 			)[0]
 			?.focus();
 

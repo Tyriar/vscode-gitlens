@@ -26,10 +26,12 @@ import {
 	RebaseDidStartCommandType,
 	RebaseEntry,
 	RebaseEntryAction,
+	RebaseEntryCommit,
 	RebaseState,
 } from './protocol';
 import { Container } from '../container';
 import { Logger } from '../logger';
+import { Commands, ShowQuickCommitDetailsCommand } from '../commands';
 
 let ipcSequence = 0;
 function nextIpcId() {
@@ -42,7 +44,8 @@ function nextIpcId() {
 	return `host:${ipcSequence}`;
 }
 
-const rebaseRegex = /(p(?:ick)|r(?:eword)|e(?:dit)|s(?:quash)|f(?:ixup)|b(?:reak)|d(?:rop))\s([0-9a-f]+?)\s(.*)/gm;
+const rebaseRegex = /^\s?#\s?Rebase\s([0-9a-f]+?)..([0-9a-f]+?)\sonto\s([0-9a-f]+?)\s.*$/gim;
+const rebaseCommandsRegex = /^\s?(p|pick|r|reword|e|edit|s|squash|f|fixup|b|break|d|drop)\s([0-9a-f]+?)\s(.*)$/gm;
 
 const rebaseActionsMap = new Map<string, RebaseEntryAction>([
 	['p', 'pick'],
@@ -98,16 +101,26 @@ export class RebaseEditorProvider implements CustomTextEditorProvider, Disposabl
 		panel.webview.html = await this.getHtml(document);
 	}
 
-	private parseContents(contents: string) {
-		const entries: (RebaseEntry & { index: number })[] = [];
+	private async parseState(document: TextDocument): Promise<RebaseState> {
+		const repoPath = await Container.git.getRepoPath(paths.join(document.uri.fsPath, '../../..'));
+
+		const contents = document.getText();
+
+		const commits: RebaseEntryCommit[] = [];
+		const entries: RebaseEntry[] = [];
+
+		const branch = await Container.git.getBranch(repoPath);
+
+		let match;
+		match = rebaseRegex.exec(contents);
+		const [, from, to, onto] = match ?? ['', '', ''];
 
 		let action;
 		let ref;
 		let message;
 
-		let match;
 		do {
-			match = rebaseRegex.exec(contents);
+			match = rebaseCommandsRegex.exec(contents);
 			if (match == null) break;
 
 			[, action, ref, message] = match;
@@ -120,17 +133,40 @@ export class RebaseEditorProvider implements CustomTextEditorProvider, Disposabl
 				// Stops excessive memory usage -- https://bugs.chromium.org/p/v8/issues/detail?id=2869
 				message: message == null || message.length === 0 ? '' : ` ${message}`.substr(1),
 			});
+
+			const commit = await Container.git.getCommit(repoPath!, ref);
+			if (commit) {
+				commits.push({
+					ref: commit.ref,
+					author: commit.author,
+					avatarUrl: commit.getAvatarUri(Container.config.defaultGravatarsStyle).toString(true),
+					date: commit.formatDate(Container.config.defaultDateFormat),
+					dateFromNow: commit.formatDateFromNow(),
+					email: commit.email,
+					message: commit.message,
+					command: `command:${Commands.ShowQuickCommitDetails}`, // ShowQuickCommitDetailsCommand.getMarkdownCommandArgs({
+					// 	sha: commit.ref,
+					// }),
+				});
+			}
 		} while (true);
 
-		return entries;
+		return {
+			branch: branch?.name ?? '',
+			from: from ?? '',
+			to: to ?? '',
+			onto: onto ?? '',
+			entries: entries,
+			commits: commits,
+		};
 	}
 
-	private parseDocumentAndSendChange(panel: WebviewPanel, document: TextDocument) {
-		const entries = this.parseContents(document.getText());
+	private async parseDocumentAndSendChange(panel: WebviewPanel, document: TextDocument) {
+		const state = await this.parseState(document);
 		this.postMessage(panel, {
 			id: nextIpcId(),
 			method: RebaseDidChangeNotificationType.method,
-			params: { entries: entries },
+			params: state,
 		});
 	}
 
@@ -175,10 +211,9 @@ export class RebaseEditorProvider implements CustomTextEditorProvider, Disposabl
 
 			case RebaseDidChangeEntryCommandType.method:
 				onIpcCommand(RebaseDidChangeEntryCommandType, e, async params => {
-					const contents = document.getText();
-					const entries = this.parseContents(contents);
+					const state = await this.parseState(document);
 
-					const entry = entries.find(e => e.ref === params.ref);
+					const entry = state.entries.find(e => e.ref === params.ref);
 					if (entry == null) return;
 
 					const start = document.positionAt(entry.index);
@@ -195,14 +230,13 @@ export class RebaseEditorProvider implements CustomTextEditorProvider, Disposabl
 
 			case RebaseDidMoveEntryCommandType.method:
 				onIpcCommand(RebaseDidMoveEntryCommandType, e, async params => {
-					const contents = document.getText();
-					const entries = this.parseContents(contents);
+					const state = await this.parseState(document);
 
-					const entry = entries.find(e => e.ref === params.ref);
+					const entry = state.entries.find(e => e.ref === params.ref);
 					if (entry == null) return;
 
-					const index = entries.findIndex(e => e.ref === params.ref);
-					if ((!params.down && index === 0) || (params.down && index === entries.length - 1)) {
+					const index = state.entries.findIndex(e => e.ref === params.ref);
+					if ((!params.down && index === 0) || (params.down && index === state.entries.length - 1)) {
 						return;
 					}
 
@@ -253,9 +287,7 @@ export class RebaseEditorProvider implements CustomTextEditorProvider, Disposabl
 			Uri.file(Container.context.asAbsolutePath('.')).with({ scheme: 'vscode-resource' }).toString(),
 		);
 
-		const bootstrap: RebaseState = {
-			entries: this.parseContents(document.getText()),
-		};
+		const bootstrap = await this.parseState(document);
 
 		html = html.replace(
 			/#{endOfBody}/i,
