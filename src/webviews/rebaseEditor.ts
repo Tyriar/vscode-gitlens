@@ -16,9 +16,10 @@ import {
 	WorkspaceEdit,
 } from 'vscode';
 import {
+	Author,
+	Commit,
 	IpcMessage,
 	onIpcCommand,
-	ReadyCommandType,
 	RebaseDidAbortCommandType,
 	RebaseDidChangeEntryCommandType,
 	RebaseDidChangeNotificationType,
@@ -26,12 +27,11 @@ import {
 	RebaseDidStartCommandType,
 	RebaseEntry,
 	RebaseEntryAction,
-	RebaseEntryCommit,
 	RebaseState,
 } from './protocol';
 import { Container } from '../container';
 import { Logger } from '../logger';
-import { Commands, ShowQuickCommitDetailsCommand } from '../commands';
+import { ShowQuickCommitDetailsCommand } from '../commands';
 
 let ipcSequence = 0;
 function nextIpcId() {
@@ -44,8 +44,8 @@ function nextIpcId() {
 	return `host:${ipcSequence}`;
 }
 
-const rebaseRegex = /^\s?#\s?Rebase\s([0-9a-f]+?)..([0-9a-f]+?)\sonto\s([0-9a-f]+?)\s.*$/gim;
-const rebaseCommandsRegex = /^\s?(p|pick|r|reword|e|edit|s|squash|f|fixup|b|break|d|drop)\s([0-9a-f]+?)\s(.*)$/gm;
+const rebaseRegex = /^\s?#\s?Rebase\s([0-9a-f]+?)..([0-9a-f]+?)\sonto\s([0-9a-f]+?)\s.*$/im;
+const rebaseCommandsRegex = /^\s?(p|pick|r|reword|e|edit|s|squash|f|fixup|d|drop)\s([0-9a-f]+?)\s(.*)$/gm;
 
 const rebaseActionsMap = new Map<string, RebaseEntryAction>([
 	['p', 'pick'],
@@ -58,8 +58,6 @@ const rebaseActionsMap = new Map<string, RebaseEntryAction>([
 	['squash', 'squash'],
 	['f', 'fixup'],
 	['fixup', 'fixup'],
-	['b', 'break'],
-	['break', 'break'],
 	['d', 'drop'],
 	['drop', 'drop'],
 ]);
@@ -94,27 +92,21 @@ export class RebaseEditorProvider implements CustomTextEditorProvider, Disposabl
 			workspace.onDidChangeTextDocument(e => {
 				if (e.contentChanges.length === 0 || e.document.uri.toString() !== document.uri.toString()) return;
 
-				this.parseDocumentAndSendChange(panel, document);
+				this.parseEntriesAndSendChange(panel, document);
 			}),
 		);
 
 		panel.webview.html = await this.getHtml(document);
 	}
 
-	private async parseState(document: TextDocument): Promise<RebaseState> {
-		const repoPath = await Container.git.getRepoPath(paths.join(document.uri.fsPath, '../../..'));
+	private parseEntries(contents: string): RebaseEntry[];
+	private parseEntries(document: TextDocument): RebaseEntry[];
+	private parseEntries(contentsOrDocument: string | TextDocument): RebaseEntry[] {
+		const contents = typeof contentsOrDocument === 'string' ? contentsOrDocument : contentsOrDocument.getText();
 
-		const contents = document.getText();
-
-		const commits: RebaseEntryCommit[] = [];
 		const entries: RebaseEntry[] = [];
 
-		const branch = await Container.git.getBranch(repoPath);
-
 		let match;
-		match = rebaseRegex.exec(contents);
-		const [, from, to, onto] = match ?? ['', '', ''];
-
 		let action;
 		let ref;
 		let message;
@@ -133,41 +125,92 @@ export class RebaseEditorProvider implements CustomTextEditorProvider, Disposabl
 				// Stops excessive memory usage -- https://bugs.chromium.org/p/v8/issues/detail?id=2869
 				message: message == null || message.length === 0 ? '' : ` ${message}`.substr(1),
 			});
-
-			const commit = await Container.git.getCommit(repoPath!, ref);
-			if (commit) {
-				commits.push({
-					ref: commit.ref,
-					author: commit.author,
-					avatarUrl: commit.getAvatarUri(Container.config.defaultGravatarsStyle).toString(true),
-					date: commit.formatDate(Container.config.defaultDateFormat),
-					dateFromNow: commit.formatDateFromNow(),
-					email: commit.email,
-					message: commit.message,
-					command: `command:${Commands.ShowQuickCommitDetails}`, // ShowQuickCommitDetailsCommand.getMarkdownCommandArgs({
-					// 	sha: commit.ref,
-					// }),
-				});
-			}
 		} while (true);
 
-		return {
-			branch: branch?.name ?? '',
-			from: from ?? '',
-			to: to ?? '',
-			onto: onto ?? '',
-			entries: entries,
-			commits: commits,
-		};
+		return entries;
 	}
 
-	private async parseDocumentAndSendChange(panel: WebviewPanel, document: TextDocument) {
-		const state = await this.parseState(document);
+	private parseEntriesAndSendChange(panel: WebviewPanel, document: TextDocument) {
+		const entries = this.parseEntries(document);
 		this.postMessage(panel, {
 			id: nextIpcId(),
 			method: RebaseDidChangeNotificationType.method,
-			params: state,
+			params: { entries: entries },
 		});
+	}
+
+	private async parseState(document: TextDocument): Promise<RebaseState> {
+		const repoPath = await Container.git.getRepoPath(paths.join(document.uri.fsPath, '../../..'));
+		const branch = await Container.git.getBranch(repoPath);
+
+		const contents = document.getText();
+		const entries = this.parseEntries(contents);
+		const [, onto] = rebaseRegex.exec(contents) ?? ['', '', ''];
+
+		const authors = new Map<string, Author>();
+		const commits: Commit[] = [];
+
+		let commit = await Container.git.getCommit(repoPath!, onto);
+		if (commit != null) {
+			if (!authors.has(commit.author)) {
+				authors.set(commit.author, {
+					author: commit.author,
+					avatarUrl: commit.getAvatarUri(Container.config.defaultGravatarsStyle).toString(true),
+					email: commit.email,
+				});
+			}
+
+			commits.push({
+				ref: commit.ref,
+				author: commit.author,
+				date: commit.formatDate(Container.config.defaultDateFormat),
+				dateFromNow: commit.formatDateFromNow(),
+				message: commit.message,
+				// command: `command:${Commands.ShowQuickCommitDetails}`,
+				// command: ShowQuickCommitDetailsCommand.getMarkdownCommandArgs({
+				// 	sha: commit.ref,
+				// }),
+			});
+		}
+
+		for (const entry of entries) {
+			commit = await Container.git.getCommit(repoPath!, entry.ref);
+			if (commit == null) continue;
+
+			if (!authors.has(commit.author)) {
+				authors.set(commit.author, {
+					author: commit.author,
+					avatarUrl: commit.getAvatarUri(Container.config.defaultGravatarsStyle).toString(true),
+					email: commit.email,
+				});
+			}
+
+			commits.push({
+				ref: commit.ref,
+				author: commit.author,
+				date: commit.formatDate(Container.config.defaultDateFormat),
+				dateFromNow: commit.formatDateFromNow(),
+				message: commit.message,
+				// command: `command:${Commands.ShowQuickCommitDetails}`,
+				// command: ShowQuickCommitDetailsCommand.getMarkdownCommandArgs({
+				// 	sha: commit.ref,
+				// }),
+			});
+		}
+
+		return {
+			branch: branch?.name ?? '',
+			onto: onto ?? '',
+			entries: entries,
+			authors: [...authors.values()],
+			commits: commits,
+			commands: {
+				commit: ShowQuickCommitDetailsCommand.getMarkdownCommandArgs({
+					// eslint-disable-next-line no-template-curly-in-string
+					sha: '${commit}',
+				}),
+			},
+		};
 	}
 
 	private async postMessage(panel: WebviewPanel, message: IpcMessage) {
@@ -190,7 +233,7 @@ export class RebaseEditorProvider implements CustomTextEditorProvider, Disposabl
 			// 	break;
 
 			case RebaseDidStartCommandType.method:
-				onIpcCommand(ReadyCommandType, e, async params => {
+				onIpcCommand(RebaseDidStartCommandType, e, async params => {
 					await document.save();
 					await commands.executeCommand('workbench.action.closeActiveEditor');
 				});
@@ -198,7 +241,7 @@ export class RebaseEditorProvider implements CustomTextEditorProvider, Disposabl
 				break;
 
 			case RebaseDidAbortCommandType.method:
-				onIpcCommand(ReadyCommandType, e, async params => {
+				onIpcCommand(RebaseDidAbortCommandType, e, async params => {
 					// Delete the contents to abort the rebase
 					const edit = new WorkspaceEdit();
 					edit.replace(document.uri, new Range(0, 0, document.lineCount, 0), '');
@@ -211,9 +254,9 @@ export class RebaseEditorProvider implements CustomTextEditorProvider, Disposabl
 
 			case RebaseDidChangeEntryCommandType.method:
 				onIpcCommand(RebaseDidChangeEntryCommandType, e, async params => {
-					const state = await this.parseState(document);
+					const entries = this.parseEntries(document);
 
-					const entry = state.entries.find(e => e.ref === params.ref);
+					const entry = entries.find(e => e.ref === params.ref);
 					if (entry == null) return;
 
 					const start = document.positionAt(entry.index);
@@ -230,13 +273,13 @@ export class RebaseEditorProvider implements CustomTextEditorProvider, Disposabl
 
 			case RebaseDidMoveEntryCommandType.method:
 				onIpcCommand(RebaseDidMoveEntryCommandType, e, async params => {
-					const state = await this.parseState(document);
+					const entries = this.parseEntries(document);
 
-					const entry = state.entries.find(e => e.ref === params.ref);
+					const entry = entries.find(e => e.ref === params.ref);
 					if (entry == null) return;
 
-					const index = state.entries.findIndex(e => e.ref === params.ref);
-					if ((!params.down && index === 0) || (params.down && index === state.entries.length - 1)) {
+					const index = entries.findIndex(e => e.ref === params.ref);
+					if ((!params.down && index === 0) || (params.down && index === entries.length - 1)) {
 						return;
 					}
 

@@ -7,13 +7,14 @@ import {
 	RebaseDidChangeNotificationType,
 	RebaseDidMoveEntryCommandType,
 	RebaseDidStartCommandType,
+	RebaseEntry,
 	RebaseEntryAction,
 	RebaseState,
 } from '../../protocol';
 import { App } from '../shared/appBase';
 import { DOM } from '../shared/dom';
 
-const rebaseActions = ['pick', 'reword', 'edit', 'squash', 'fixup', 'break', 'drop'];
+const rebaseActions = ['pick', 'reword', 'edit', 'squash', 'fixup', 'drop'];
 const rebaseActionsMap = new Map<string, RebaseEntryAction>([
 	['p', 'pick'],
 	['P', 'pick'],
@@ -25,8 +26,6 @@ const rebaseActionsMap = new Map<string, RebaseEntryAction>([
 	['S', 'squash'],
 	['f', 'fixup'],
 	['F', 'fixup'],
-	['b', 'break'],
-	['B', 'break'],
 	['d', 'drop'],
 	['D', 'drop'],
 ]);
@@ -54,9 +53,20 @@ class RebaseEditor extends App<RebaseState> {
 			DOM.on('[data-action="start"]', 'click', () => this.onStartClicked()),
 			DOM.on('[data-action="abort"]', 'click', () => this.onAbortClicked()),
 			DOM.on('li[data-ref]', 'keydown', function (this: Element, e: KeyboardEvent) {
-				if ((e.target as HTMLElement).matches('select[data-ref')) return;
+				if ((e.target as HTMLElement).matches('select[data-ref]')) {
+					if (e.key === 'Escape') {
+						(this as HTMLLIElement).focus();
+					}
 
-				if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+					return;
+				}
+
+				if (e.key === 'Enter') {
+					const $select = (this as HTMLLIElement).querySelectorAll<HTMLSelectElement>('select[data-ref]')[0];
+					if ($select) {
+						$select.focus();
+					}
+				} else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
 					if (!e.metaKey && !e.ctrlKey && !e.shiftKey) {
 						if (e.altKey) {
 							const ref = (this as HTMLLIElement).dataset.ref;
@@ -120,7 +130,7 @@ class RebaseEditor extends App<RebaseState> {
 		if (entry !== undefined) {
 			this.sendCommand(RebaseDidMoveEntryCommandType, {
 				ref: entry.ref,
-				down: down,
+				down: !down,
 			});
 		}
 	}
@@ -171,6 +181,11 @@ class RebaseEditor extends App<RebaseState> {
 	}
 
 	private refresh(state: RebaseState) {
+		const $subhead = document.getElementById('subhead')! as HTMLHeadingElement;
+		$subhead.innerHTML = `<span class="branch ml-1 mr-1">${state.branch}</span><span>Rebasing ${
+			state.entries.length
+		} commit${state.entries.length > 1 ? 's' : ''} onto <span class="commit">${state.onto}</span>`;
+
 		const $container = document.getElementById('entries')!;
 
 		const focusRef = document.activeElement?.closest<HTMLLIElement>('li[data-ref]')?.dataset.ref;
@@ -182,15 +197,49 @@ class RebaseEditor extends App<RebaseState> {
 		$container.innerHTML = '';
 		if (state.entries.length === 0) return;
 
-		let tabIndex = 1;
+		let tabIndex = 0;
 
-		let prev;
-		for (const entry of state.entries) {
-			const $entry = document.createElement('li');
-			$entry.classList.add('entry', `entry--${entry.action}`);
-			$entry.dataset.ref = entry.ref;
-			$entry.tabIndex = tabIndex++;
+		// let prev: string | undefined;
+		for (const entry of state.entries.reverse()) {
+			$container.appendChild(this.createEntry(entry, state, tabIndex++));
+			tabIndex++;
 
+			// if (entry.action !== 'drop') {
+			// 	prev = entry.ref;
+			// }
+		}
+
+		const commit = state.commits.find(c => c.ref.startsWith(state.onto));
+		if (commit) {
+			$container.appendChild(
+				this.createEntry(
+					{
+						action: undefined!,
+						index: 0,
+						message: commit.message.split('\n')[0],
+						ref: state.onto,
+					},
+					state,
+					tabIndex++,
+				),
+			);
+		}
+		document
+			.querySelectorAll<HTMLLIElement>(
+				`${focusSelect ? 'select' : 'li'}[data-ref="${focusRef ?? state.entries[0].ref}"]`,
+			)[0]
+			?.focus();
+
+		this.bind();
+	}
+
+	private createEntry(entry: RebaseEntry, state: RebaseState, tabIndex: number) {
+		const $entry = document.createElement('li');
+		$entry.classList.add('entry', `entry--${entry.action}`);
+		$entry.dataset.ref = entry.ref;
+		$entry.tabIndex = tabIndex++;
+
+		if (entry.action !== undefined) {
 			const $selectContainer = document.createElement('div');
 			$selectContainer.classList.add('entry-action', 'select-container');
 			$entry.appendChild($selectContainer);
@@ -212,60 +261,54 @@ class RebaseEditor extends App<RebaseState> {
 				$select.appendChild(option);
 			}
 			$selectContainer.appendChild($select);
+		} else {
+			const $base = document.createElement('span');
+			$base.classList.add('entry-base', 'entry-commit');
+			$base.innerText = '';
+			$entry.appendChild($base);
+		}
 
-			const $message = document.createElement('span');
-			$message.classList.add('entry-message');
-			$message.innerText = entry.message ?? '';
-			$entry.appendChild($message);
+		const $message = document.createElement('span');
+		$message.classList.add('entry-message');
+		$message.innerText = entry.message ?? '';
+		$entry.appendChild($message);
 
-			const commit = state.commits.find(c => c.ref.startsWith(entry.ref));
-			if (commit) {
-				$message.title = commit.message ?? '';
+		const commit = state.commits.find(c => c.ref.startsWith(entry.ref));
+		if (commit) {
+			$message.title = commit.message ?? '';
 
-				if (commit.author) {
-					if (commit.avatarUrl) {
-						const $avatar = document.createElement('img');
-						// $avatar.classList.add('entry-ref');
-						$avatar.src = commit.avatarUrl;
-						$entry.appendChild($avatar);
-					}
-
-					const $author = document.createElement('span');
-					$author.classList.add('entry-ref');
-					$author.innerText = commit.author;
-					$entry.appendChild($author);
+			if (commit.author) {
+				const author = state.authors.find(a => a.author === commit.author);
+				if (author?.avatarUrl) {
+					const $avatar = document.createElement('img');
+					$avatar.classList.add('entry-avatar');
+					$avatar.src = author.avatarUrl;
+					$entry.appendChild($avatar);
 				}
 
-				if (commit.dateFromNow) {
-					const $date = document.createElement('span');
-					$date.title = commit.date ?? '';
-					$date.classList.add('entry-ref');
-					$date.innerText = commit.dateFromNow;
-					$entry.appendChild($date);
-				}
+				const $author = document.createElement('span');
+				$author.classList.add('entry-author');
+				$author.innerText = commit.author;
+				$entry.appendChild($author);
 			}
 
-			const $ref = document.createElement('a');
-			$ref.classList.add('entry-ref');
-			$ref.dataset.prev = prev ? `${prev} \u2190 ` : '';
-			$ref.href = commit?.command ?? '#';
-			$ref.innerText = entry.ref;
-			$entry.appendChild($ref);
-
-			$container.appendChild($entry);
-
-			if (entry.action !== 'drop') {
-				prev = entry.ref;
+			if (commit.dateFromNow) {
+				const $date = document.createElement('span');
+				$date.title = commit.date ?? '';
+				$date.classList.add('entry-date');
+				$date.innerText = commit.dateFromNow;
+				$entry.appendChild($date);
 			}
 		}
 
-		document
-			.querySelectorAll<HTMLLIElement>(
-				`${focusSelect ? 'select' : 'li'}[data-ref="${focusRef ?? state.entries[0].ref}"]`,
-			)[0]
-			?.focus();
+		const $ref = document.createElement('a');
+		$ref.classList.add('entry-ref');
+		// $ref.dataset.prev = prev ? `${prev} \u2190 ` : '';
+		$ref.href = commit?.ref ? state.commands.commit.replace(/\$\{commit\}/, commit.ref) : '#';
+		$ref.innerText = entry.ref;
+		$entry.appendChild($ref);
 
-		this.bind();
+		return $entry;
 	}
 }
 

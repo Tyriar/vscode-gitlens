@@ -72,6 +72,23 @@ export interface SettingsState extends AppStateWithConfig {
 
 export type WelcomeState = AppStateWithConfig;
 
+export interface Author {
+	readonly author: string;
+	readonly avatarUrl: string;
+	readonly email: string | undefined;
+}
+
+export interface Commit {
+	readonly ref: string;
+	readonly author: string;
+	// readonly avatarUrl: string;
+	readonly date: string;
+	readonly dateFromNow: string;
+	// readonly email: string | undefined;
+	readonly message: string;
+	// readonly command: string;
+}
+
 export type RebaseEntryAction = 'pick' | 'reword' | 'edit' | 'squash' | 'fixup' | 'break' | 'drop';
 
 export interface RebaseEntry {
@@ -79,17 +96,6 @@ export interface RebaseEntry {
 	readonly ref: string;
 	readonly message: string;
 	readonly index: number;
-}
-
-export interface RebaseEntryCommit {
-	readonly ref: string;
-	readonly author: string;
-	readonly avatarUrl: string;
-	readonly date: string;
-	readonly dateFromNow: string;
-	readonly email: string | undefined;
-	readonly message: string;
-	readonly command: string;
 }
 
 export interface RebaseDidChangeNotificationParams {
@@ -119,10 +125,12 @@ export const RebaseDidMoveEntryCommandType = new IpcCommandType<RebaseDidMoveEnt
 
 export interface RebaseState extends RebaseDidChangeNotificationParams {
 	branch: string;
-	from: string;
-	to: string;
 	onto: string;
 
-	commits: RebaseEntryCommit[];
 	entries: RebaseEntry[];
+	authors: Author[];
+	commits: Commit[];
+	commands: {
+		commit: string;
+	};
 }
