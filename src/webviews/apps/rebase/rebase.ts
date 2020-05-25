@@ -63,7 +63,7 @@ class RebaseEditor extends App<RebaseState> {
 
 				if (e.key === 'Enter') {
 					const $select = (this as HTMLLIElement).querySelectorAll<HTMLSelectElement>('select[data-ref]')[0];
-					if ($select) {
+					if ($select != null) {
 						$select.focus();
 					}
 				} else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
@@ -102,7 +102,7 @@ class RebaseEditor extends App<RebaseState> {
 						const $select = (this as HTMLLIElement).querySelectorAll<HTMLSelectElement>(
 							'select[data-ref]',
 						)[0];
-						if ($select) {
+						if ($select != null) {
 							$select.value = action;
 							me.onSelectChanged($select);
 						}
@@ -279,7 +279,7 @@ class RebaseEditor extends App<RebaseState> {
 
 			if (commit.author) {
 				const author = state.authors.find(a => a.author === commit.author);
-				if (author?.avatarUrl) {
+				if (author?.avatarUrl.length > 0) {
 					const $avatar = document.createElement('img');
 					$avatar.classList.add('entry-avatar');
 					$avatar.src = author.avatarUrl;

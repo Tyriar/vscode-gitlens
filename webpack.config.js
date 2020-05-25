@@ -239,7 +239,7 @@ function getWebviewsConfig(mode, env) {
 		new HtmlPlugin({
 			excludeAssets: [/.+-styles\.js/],
 			excludeChunks: ['settings', 'settings-styles', 'welcome', 'welcome-styles'],
-			template: 'rebase/index.html',
+			template: 'rebase/rebase.ejs',
 			filename: path.resolve(__dirname, 'dist/webviews/rebase.html'),
 			inject: true,
 			inlineSource: mode === 'production' ? '.css$' : undefined,
@@ -347,7 +347,7 @@ function getWebviewsConfig(mode, env) {
 		name: 'webviews',
 		context: path.resolve(__dirname, 'src/webviews/apps'),
 		entry: {
-			rebase: ['./rebase/index.ts'],
+			rebase: ['./rebase/rebase.ts'],
 			'rebase-styles': ['./scss/rebase.scss'],
 			settings: ['./settings/settings.ts'],
 			'settings-styles': ['./scss/settings.scss'],

@@ -1,2 +1,3 @@
 dist/*
+source/@types/*
 emojis.json

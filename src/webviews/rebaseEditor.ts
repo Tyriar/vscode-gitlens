@@ -15,6 +15,9 @@ import {
 	workspace,
 	WorkspaceEdit,
 } from 'vscode';
+import { ShowQuickCommitCommand } from '../commands';
+import { Container } from '../container';
+import { Logger } from '../logger';
 import {
 	Author,
 	Commit,
@@ -29,9 +32,6 @@ import {
 	RebaseEntryAction,
 	RebaseState,
 } from './protocol';
-import { Container } from '../container';
-import { Logger } from '../logger';
-import { ShowQuickCommitDetailsCommand } from '../commands';
 
 let ipcSequence = 0;
 function nextIpcId() {
@@ -76,10 +76,10 @@ export class RebaseEditorProvider implements CustomTextEditorProvider, Disposabl
 	}
 
 	dispose() {
-		this._disposable && this._disposable.dispose();
+		this._disposable.dispose();
 	}
 
-	async resolveCustomTextEditor(document: TextDocument, panel: WebviewPanel, token: CancellationToken) {
+	async resolveCustomTextEditor(document: TextDocument, panel: WebviewPanel, _token: CancellationToken) {
 		const disposables: Disposable[] = [];
 
 		disposables.push(panel.onDidDispose(() => disposables.forEach(d => d.dispose())));
@@ -132,7 +132,7 @@ export class RebaseEditorProvider implements CustomTextEditorProvider, Disposabl
 
 	private parseEntriesAndSendChange(panel: WebviewPanel, document: TextDocument) {
 		const entries = this.parseEntries(document);
-		this.postMessage(panel, {
+		void this.postMessage(panel, {
 			id: nextIpcId(),
 			method: RebaseDidChangeNotificationType.method,
 			params: { entries: entries },
@@ -205,7 +205,7 @@ export class RebaseEditorProvider implements CustomTextEditorProvider, Disposabl
 			authors: [...authors.values()],
 			commits: commits,
 			commands: {
-				commit: ShowQuickCommitDetailsCommand.getMarkdownCommandArgs({
+				commit: ShowQuickCommitCommand.getMarkdownCommandArgs({
 					// eslint-disable-next-line no-template-curly-in-string
 					sha: '${commit}',
 				}),
@@ -233,7 +233,7 @@ export class RebaseEditorProvider implements CustomTextEditorProvider, Disposabl
 			// 	break;
 
 			case RebaseDidStartCommandType.method:
-				onIpcCommand(RebaseDidStartCommandType, e, async params => {
+				onIpcCommand(RebaseDidStartCommandType, e, async _params => {
 					await document.save();
 					await commands.executeCommand('workbench.action.closeActiveEditor');
 				});
@@ -241,7 +241,7 @@ export class RebaseEditorProvider implements CustomTextEditorProvider, Disposabl
 				break;
 
 			case RebaseDidAbortCommandType.method:
-				onIpcCommand(RebaseDidAbortCommandType, e, async params => {
+				onIpcCommand(RebaseDidAbortCommandType, e, async _params => {
 					// Delete the contents to abort the rebase
 					const edit = new WorkspaceEdit();
 					edit.replace(document.uri, new Range(0, 0, document.lineCount, 0), '');
